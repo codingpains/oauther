@@ -2,14 +2,25 @@ defmodule OAuther do
   defmodule Credentials do
     defstruct [:consumer_key, :consumer_secret,
                :token, :token_secret, method: :hmac_sha1]
+
+    @type t :: %__MODULE__{
+                 method: :plaintext | :hmac_sha1 | :rsa_sha1,
+                 consumer_key: String.t,
+                 consumer_secret: String.t,
+                 token: String.t,
+                 token_secret: String.t}
   end
 
+  @type param :: {String.t, String.Chars.t}
+
+  @spec credentials(Enum.t) :: Credentials.t | no_return
   def credentials(args) do
     Enum.reduce(args, %Credentials{}, fn({key, val}, acc) ->
       :maps.update(key, val, acc)
     end)
   end
 
+  @spec sign(String.t, URI.t | String.t, Enum.t, Credentials.t) :: [param]
   def sign(verb, url, params, %Credentials{} = creds) do
     params = protocol_params(params, creds)
     signature = signature(verb, url, params, creds)
@@ -17,12 +28,14 @@ defmodule OAuther do
     [{"oauth_signature", signature} | params]
   end
 
+  @spec header([param]) :: {param, [param]}
   def header(params) do
     {oauth_params, req_params} = Enum.partition(params, &protocol_param?/1)
 
     {{"Authorization", "OAuth " <> compose_header(oauth_params)}, req_params}
   end
 
+  @doc false
   def protocol_params(params, %Credentials{} = creds) do
     [{"oauth_consumer_key",     creds.consumer_key},
      {"oauth_nonce",            nonce},
@@ -32,6 +45,7 @@ defmodule OAuther do
      | cons_token(params, creds.token)]
   end
 
+  @doc false
   def signature(_, _, _, %{method: :plaintext} = creds) do
     compose_key(creds)
   end
@@ -73,7 +87,8 @@ defmodule OAuther do
 
   defp base_string(verb, url, params) do
     {uri, query_params} = parse_url(url)
-    [verb, uri, params ++ query_params]
+    params = Enum.concat(params, query_params)
+    [verb, uri, params]
     |> Stream.map(&normalize/1)
     |> Enum.map_join("&", &percent_encode/1)
   end
