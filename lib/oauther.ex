@@ -10,17 +10,43 @@ defmodule OAuther do
     end)
   end
 
+  def sign(verb, url, %{} = params, %Credentials{} = creds) do
+    params = protocol_params(params, creds)
+    signature = signature(verb, url, params, creds)
+    Map.merge %{"oauth_signature" => signature}, params
+  end
+
   def sign(verb, url, params, %Credentials{} = creds) do
     params = protocol_params(params, creds)
     signature = signature(verb, url, params, creds)
-
     [{"oauth_signature", signature} | params]
+  end
+
+  def header(%{} = params) do
+    keys = oauth_keys params
+    {oauth_params, req_params} = Map.split(params, keys)
+    value = Map.to_list(oauth_params) |> compose_header
+    {{"Authorization", "OAuth " <> value}, req_params}
   end
 
   def header(params) do
     {oauth_params, req_params} = Enum.partition(params, &protocol_param?/1)
 
     {{"Authorization", "OAuth " <> compose_header(oauth_params)}, req_params}
+  end
+
+  defp oauth_keys(%{} = params) do
+    keys = Map.keys params
+    Enum.filter(keys, fn(key) -> protocol_param?({to_string(key), nil}) end)
+  end
+
+  def protocol_params(%{} = params, %Credentials{} = creds) do
+    oauth_params = %{"oauth_consumer_key"     => creds.consumer_key,
+                     "oauth_nonce"            => nonce,
+                     "oauth_signature_method" => sign_method(creds.method),
+                     "oauth_timestamp"        => timestamp,
+                     "oauth_version"          => "1.0"}
+    Map.merge oauth_params, cons_token(params, creds.token)
   end
 
   def protocol_params(params, %Credentials{} = creds) do
@@ -71,6 +97,13 @@ defmodule OAuther do
     |> hd() |> :public_key.pem_entry_decode
   end
 
+  defp base_string(verb, url, params) when is_map(params) do
+    {uri, query_params} = parse_url(url)
+    [verb, uri, query_params, params]
+    |> Stream.map(&normalize/1)
+    |> Enum.map_join("&", &percent_encode/1)
+  end
+
   defp base_string(verb, url, params) do
     {uri, query_params} = parse_url(url)
     [verb, uri, params ++ query_params]
@@ -79,16 +112,20 @@ defmodule OAuther do
   end
 
   defp normalize(verb) when is_binary(verb),
-    do: String.upcase(verb)
+   do: String.upcase(verb)
 
   defp normalize(%URI{host: host} = uri),
-    do: %{uri | host: String.downcase(host)}
+   do: %{uri | host: String.downcase(host)}
+
+  defp normalize(%{} = params), do: Poison.encode!(params)
 
   defp normalize([_ | _] = params) do
     Enum.map(params, &percent_encode/1)
     |> Enum.sort
     |> Enum.map_join("&", &normalize_pair/1)
   end
+
+  defp normalize([] = params), do: ""
 
   defp normalize_pair({key, value}) do
     key <> "=" <> value
@@ -118,6 +155,9 @@ defmodule OAuther do
   end
 
   defp cons_token(params, nil), do: params
+  defp cons_token(%{} = params, value) do
+    Map.merge %{"oauth_token" => value}, params
+  end
   defp cons_token(params, value),
     do: [{"oauth_token", value} | params]
 

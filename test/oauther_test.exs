@@ -25,6 +25,30 @@ defmodule OAutherTest do
     assert signature(params, creds, "/photos?size=large") == "dzTFIxhRqhwfFqoXYgo4+hoPr2M="
   end
 
+  test "protocol_params with json body" do
+    creds = OAuther.credentials(consumer_secret: "kd94hf93k423kf44", token_secret: "pfkkdhi9sl3r4s00", consumer_key: "dpf43f3p2l4k3l03", token: "nnch734d00sl2jdk")
+    params = OAuther.protocol_params(json_params, creds)
+    assert Map.has_key?(params, :groupings) == :true
+    assert Map.has_key?(params, "oauth_token") == :true
+  end
+
+  test "sign with json body" do
+    creds = OAuther.credentials(consumer_secret: "kd94hf93k423kf44", token_secret: "pfkkdhi9sl3r4s00", consumer_key: "dpf43f3p2l4k3l03", token: "nnch734d00sl2jdk")
+    params = json_params
+    url = "http://photos.example.net/json"
+    result = OAuther.sign("post", url, params, creds)
+    {head, req_params} = OAuther.header result
+    assert is_tuple(head) == :true
+    assert is_map(req_params) == :true
+  end
+
+  test "signature with json body" do
+    creds = OAuther.credentials(consumer_secret: "kd94hf93k423kf44", token_secret: "pfkkdhi9sl3r4s00", consumer_key: "dpf43f3p2l4k3l03", token: "nnch734d00sl2jdk")
+    params = json_params
+    url = "http://photos.example.net/json"
+    assert OAuther.signature("post", url, params, creds) == "jsgMXQghONawPIyirz4WJNS1cko="
+  end
+
   test "Authorization header" do
     {header, req_params} = OAuther.header [
       {"oauth_consumer_key",     "dpf43f3p2l4k3l03"},
@@ -44,6 +68,18 @@ defmodule OAutherTest do
   defp protocol_params(creds) do
     OAuther.protocol_params([file: "vacation.jpg", size: "original"], creds)
     |> rewrite()
+  end
+
+  defp json_params do
+    %{
+     "tweet_ids": ["715615075407568896"],
+     "engagement_types": ["favorites", "replies", "retweets"],
+     "groupings": %{
+       "types-by-tweet-id": %{
+         "group_by": ["tweet.id", "engagement.type"]
+       }
+     }
+   }
   end
 
   defp rewrite(params) do
