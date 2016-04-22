@@ -71,6 +71,15 @@ defmodule OAuther do
     |> hd() |> :public_key.pem_entry_decode
   end
 
+  defp base_string(verb, url, params) when is_map(params) do
+    IO.puts "base_string when is_map(params)"
+    IO.inspect params
+    {uri, query_params} = parse_url(url)
+    [verb, uri, query_params, params]
+    |> Stream.map(&normalize/1)
+    |> Enum.map_join("&", &percent_encode/1)
+  end
+
   defp base_string(verb, url, params) do
     {uri, query_params} = parse_url(url)
     [verb, uri, params ++ query_params]
@@ -79,16 +88,21 @@ defmodule OAuther do
   end
 
   defp normalize(verb) when is_binary(verb),
-    do: String.upcase(verb)
+   do: String.upcase(verb)
 
   defp normalize(%URI{host: host} = uri),
-    do: %{uri | host: String.downcase(host)}
+   do: %{uri | host: String.downcase(host)}
+
+  defp normalize(params) when is_map(params),
+   do: Poison.encode!(params)
 
   defp normalize([_ | _] = params) do
     Enum.map(params, &percent_encode/1)
     |> Enum.sort
     |> Enum.map_join("&", &normalize_pair/1)
   end
+
+  defp normalize([] = params), do: ""
 
   defp normalize_pair({key, value}) do
     key <> "=" <> value
